@@ -29,7 +29,7 @@ describe("TetherTreasure", function () {
   });
 
   it("should not allow the owner to withdraw more than the balance", async function () {
-    await expect(treasure.withdraw(alice.address, 5001 * 10 ** 6)).to.be.revertedWith("Not enough balance");
+    await expect(treasure.withdraw(alice.address, 5001 * 10 ** 6)).to.be.revertedWithCustomError(tether, "ERC20InsufficientBalance");
   });
 
   it("should not allow non-owners to withdraw", async function () {
@@ -44,9 +44,13 @@ describe("TetherTreasure", function () {
     });
     it("owner cannot set invalid allowance", async function () {
       await expect(treasure.connect(owner).decreaseAllowance(alice.address, 100 * 10 ** 6)).to.be.revertedWithPanic(0x11);
-      await expect(treasure.connect(owner).increaseAllowance(alice.address, 0)).to.be.revertedWith("Amount must be greater than 0");
-      await expect(treasure.connect(owner).increaseAllowance(ethers.ZeroAddress, 0)).to.be.revertedWith("Amount must be greater than 0");
-      await expect(treasure.connect(owner).increaseAllowance(ethers.ZeroAddress, 100 * 10 ** 6)).to.be.revertedWith("Spender cannot be zero address");
+      await expect(treasure.connect(owner).increaseAllowance(alice.address, 0)).to.be.revertedWithCustomError(treasure, "TetherTreasureInvalidAmount");
+      await expect(treasure.connect(owner).increaseAllowance(ethers.ZeroAddress, 0)).to.be.revertedWithCustomError(treasure, "TetherTreasureInvalidAmount");
+      await expect(treasure.connect(owner).increaseAllowance(ethers.ZeroAddress, 100 * 10 ** 6)).to.be.revertedWithCustomError(treasure, "TetherTreasureInvalidSpender");
+    });
+    it("invalid repay", async function () {
+      await expect(treasure.connect(owner).repay(0)).to.be.revertedWithCustomError(treasure, "TetherTreasureInvalidAmount");
+      await expect(treasure.connect(hacker).repay(100 * 10 ** 6)).to.be.revertedWithCustomError(tether, "ERC20InsufficientAllowance");
     });
     it("should allow the owner to set allowance", async function () {
       await expect(treasure.connect(owner).increaseAllowance(alice.address, 100 * 10 ** 6)).to.emit(tether, "Approval").withArgs(treasure.target, alice.address, 100 * 10 ** 6);
@@ -65,6 +69,26 @@ describe("TetherTreasure", function () {
       await expect(treasure.connect(hacker).increaseAllowance(alice.address, 100 * 10 ** 6)).to.be.revertedWithCustomError(treasure, "OwnableUnauthorizedAccount");
       await expect(treasure.connect(hacker).decreaseAllowance(alice.address, 100 * 10 ** 6)).to.be.revertedWithCustomError(treasure, "OwnableUnauthorizedAccount");
       await expect(treasure.connect(hacker).resetAllowance(alice.address)).to.be.revertedWithCustomError(treasure, "OwnableUnauthorizedAccount");
+    });
+    it("spend and repay", async function () {
+      await expect(treasure.connect(owner).increaseAllowance(alice.address, 100 * 10 ** 6)).to.emit(tether, "Approval").withArgs(treasure.target, alice.address, 100 * 10 ** 6);
+      await expect(tether.connect(alice).transferFrom(treasure.target, bob.address, 30 * 10 ** 6)).to.emit(tether, "Transfer").withArgs(treasure.target, bob.address, 30 * 10 ** 6);
+      expect(await tether.balanceOf(treasure.target)).to.equal(4970 * 10 ** 6);
+      expect(await tether.balanceOf(bob.address)).to.equal(30 * 10 ** 6);
+      expect(await tether.allowance(treasure.target, alice.address)).to.equal(70 * 10 ** 6);
+      await expect(tether.connect(bob).transfer(alice.address, 20 * 10 ** 6)).to.emit(tether, "Transfer").withArgs(bob.address, alice.address, 20 * 10 ** 6);
+      expect(await tether.balanceOf(alice.address)).to.equal(20 * 10 ** 6);
+      expect(await tether.balanceOf(bob.address)).to.equal(10 * 10 ** 6);
+      await expect(tether.connect(alice).approve(treasure.target, 10 * 10 ** 6)).to.emit(tether, "Approval").withArgs(alice.address, treasure.target, 10 * 10 ** 6);
+      await expect(treasure.connect(alice).repay(10 * 10 ** 6)).to.emit(tether, "Transfer").withArgs(alice.address, treasure.target, 10 * 10 ** 6).to.emit(tether, "Approval").withArgs(treasure.target, alice.address, 80 * 10 ** 6);
+      expect(await tether.balanceOf(alice.address)).to.equal(10 * 10 ** 6);
+      expect(await tether.allowance(treasure.target, alice.address)).to.equal(80 * 10 ** 6);
+      expect(await tether.balanceOf(treasure.target)).to.equal(4980 * 10 ** 6);
+      await expect(tether.connect(bob).approve(treasure.target, 10 * 10 ** 6)).to.emit(tether, "Approval").withArgs(bob.address, treasure.target, 10 * 10 ** 6);
+      await expect(treasure.connect(bob).repay(10 * 10 ** 6)).to.emit(tether, "Transfer").withArgs(bob.address, treasure.target, 10 * 10 ** 6).to.emit(tether, "Approval").withArgs(treasure.target, bob.address, 10 * 10 ** 6);
+      expect(await tether.balanceOf(bob.address)).to.equal(0);
+      expect(await tether.allowance(treasure.target, bob.address)).to.equal(10 * 10 ** 6);
+      expect(await tether.balanceOf(treasure.target)).to.equal(4990 * 10 ** 6);
     });
   });
 });
