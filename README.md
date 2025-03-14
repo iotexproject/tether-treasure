@@ -1,2 +1,2 @@
-# tether-treasure
-A Treasure for Tether USDT
+# tether-treasury
+A Treasury for Tether USDT
